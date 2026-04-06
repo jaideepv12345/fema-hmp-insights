@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FEMA HMP Deep Analyzer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="app-header">
+    <div class="header-inner">
+        <div class="header-badge">FEMA 44 CFR · BRIC · HMGP · NRI</div>
+        <h1>HMP <span>Deep Analyzer</span></h1>
+        <p>Contextual intelligence for county Hazard Mitigation Plans — FEMA compliance, BRIC funding gaps, and deep operational, strategic, and wisdom-layer analysis.</p>
+        <div class="header-metrics">
+            <div class="header-metric"><strong>Analyzes Against</strong>16 FEMA Requirements</div>
+            <div class="header-metric"><strong>Funding</strong>BRIC · HMGP · FMA · PDM</div>
+            <div class="header-metric"><strong>County Data</strong>Census · NRI · Disaster History</div>
+            <div class="header-metric"><strong>Depth Layers</strong>Operational · Strategic · Wisdom · Insights</div>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+
+    <!-- Input Panel -->
+    <section class="input-panel">
+        <h2>📋 Submit Hazard Mitigation Plan</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="state-select">State</label>
+                <select id="state-select"><option value="">Loading states...</option></select>
+                <span class="hint">Required for county data</span>
+            </div>
+            <div class="form-group">
+                <label for="county-input">County Name</label>
+                <input type="text" id="county-input" placeholder='e.g., "Miami-Dade"'>
+                <span class="hint">Enter county name as it appears in Census records</span>
+            </div>
+            <div class="form-group">
+                <label for="doc-title">Plan Title (optional)</label>
+                <input type="text" id="doc-title" placeholder="e.g., 2024 HMP Update">
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 12px;">
+            <label for="doc-text">Hazard Mitigation Plan Text</label>
+            <textarea id="doc-text" placeholder="Paste the full Hazard Mitigation Plan text here. Include all sections — risk assessment, mitigation strategy, action items, etc."></textarea>
+            <div class="text-meta">
+                <span>Paste your full HMP document text</span>
+                <span><span id="char-count">0</span> chars</span>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-primary" id="btn-analyze" onclick="runFullAnalysis()">
+                🔬 Run Full Deep Analysis
+            </button>
+            <button class="btn btn-secondary" id="btn-prescan" onclick="runPreScan()">
+                ⚡ Pre-Scan Only (Fast)
+            </button>
+        </div>
+    </section>
+
+    <!-- Error -->
+    <div id="error-box" class="error-box hidden">
+        <h3>⚠️ Analysis Error</h3>
+        <p id="error-msg"></p>
+    </div>
+
+    <!-- API Key Warning -->
+    <div id="api-warning" class="warning-box hidden">
+        <h3>🔑 OpenAI API Key Not Configured</h3>
+        <p>Deep analysis (Operational/Strategic/Wisdom/Insights layers) requires an OpenAI API key. Set <code>OPENAI_API_KEY</code> in your Vercel project settings under Environment Variables. The compliance pre-scan is still available.</p>
+    </div>
+
+    <!-- Results Area -->
+    <div id="results-area" class="hidden">
+
+        <!-- Status Banner -->
+        <div id="status-banner" class="status-banner"></div>
+
+        <!-- Tabs -->
+        <div class="tabs" id="tab-bar">
+            <button class="tab active" data-tab="overview">📊 Overview</button>
+            <button class="tab" data-tab="compliance">✅ FEMA Compliance</button>
+            <button class="tab" data-tab="bric">💰 BRIC & Funding</button>
+            <button class="tab" data-tab="operational">⚙️ Operational Rigor</button>
+            <button class="tab" data-tab="strategic">🎯 Strategic Rigor</button>
+            <button class="tab" data-tab="wisdom">🧠 Wisdom & Insights</button>
+        </div>
+
+        <div class="tab-content">
+
+            <!-- TAB: Overview -->
+            <div class="tab-panel active" id="panel-overview">
+                <div id="overview-content"></div>
+            </div>
+
+            <!-- TAB: FEMA Compliance -->
+            <div class="tab-panel" id="panel-compliance">
+                <div id="compliance-content"></div>
+            </div>
+
+            <!-- TAB: BRIC & Funding -->
+            <div class="tab-panel" id="panel-bric">
+                <div id="bric-content"></div>
+            </div>
+
+            <!-- TAB: Operational Rigor -->
+            <div class="tab-panel" id="panel-operational">
+                <div id="operational-content"></div>
+            </div>
+
+            <!-- TAB: Strategic Rigor -->
+            <div class="tab-panel" id="panel-strategic">
+                <div id="strategic-content"></div>
+            </div>
+
+            <!-- TAB: Wisdom & Insights -->
+            <div class="tab-panel" id="panel-wisdom">
+                <div id="wisdom-content"></div>
+            </div>
+
+        </div>
+
+        <div style="text-align:center; padding: 20px 0;">
+            <button class="btn btn-success" onclick="exportReport()">📥 Export Full Report</button>
+        </div>
+    </div>
+
+</div>
+
+<footer class="app-footer">
+    <p>FEMA HMP Deep Analyzer — Python (Flask) on Vercel · GPT-4o Deep Reasoning</p>
+    <p class="disclaimer">This tool provides analytical assistance for plan review. It does not replace official FEMA review or constitute legal/compliance advice. Always verify findings against current FEMA guidance.</p>
+</footer>
+
+<script>
+// ─── State ───
+let analysisData = null;
+let lastPreScan = null;
+
+// ─── Init ───
+document.addEventListener('DOMContentLoaded', () => {
+    loadStates();
+    setupTabs();
+    setupCharCount();
+    checkApiHealth();
+});
+
+function setupCharCount() {
+    const ta = document.getElementById('doc-text');
+    const cc = document.getElementById('char-count');
+    ta.addEventListener('input', () => {
+        cc.textContent = ta.value.length.toLocaleString();
+    });
+}
+
+function setupTabs() {
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+        });
+    });
+}
+
+async function loadStates() {
+    try {
+        const resp = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'states'}),
+        });
+        const data = await resp.json();
+        const sel = document.getElementById('state-select');
+        sel.innerHTML = '<option value="">— Select State —</option>' +
+            data.states.map(s => `<option value="${s}">${s}</option>`).join('');
+    } catch(e) {
+        document.getElementById('state-select').innerHTML = '<option value="">Could not load states</option>';
+    }
+}
+
+async function checkApiHealth() {
+    try {
+        const resp = await fetch('/api/health');
+        const data = await resp.json();
+        if (!data.openai_configured) {
+            document.getElementById('api-warning').classList.remove('hidden');
+        }
+    } catch(e) {}
+}
+
+// ─── Analysis Functions ───
+
+async function runPreScan() {
+    const text = document.getElementById('doc-text').value.trim();
+    if (!text) return showError('Please paste your HMP document text first.');
+    if (text.length < 50) return showError('Text is too short (minimum 50 characters).');
+
+    hideError();
+    showLoading('pre-scan');
+    setBtnLoading('btn-prescan', true);
+
+    try {
+        const resp = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'preprocess', text}),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Scan failed');
+
+        lastPreScan = data.pre_scan;
+        renderPreScanOnly(data.pre_scan);
+    } catch(e) {
+        showError(e.message);
+    } finally {
+        setBtnLoading('btn-prescan', false);
+        hideLoading();
+    }
+}
+
+async function runFullAnalysis() {
+    const text = document.getElementById('doc-text').value.trim();
+    const state = document.getElementById('state-select').value;
+    const county = document.getElementById('county-input').value.trim();
+
+    if (!text) return showError('Please paste your HMP document text first.');
+    if (text.length < 50) return showError('Text is too short (minimum 50 characters).');
+
+    hideError();
+    document.getElementById('results-area').classList.add('hidden');
+    showLoading('full');
+    setBtnLoading('btn-analyze', true);
+
+    try {
+        const resp = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'full',
+                text,
+                state: state || '',
+                county: county || '',
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Analysis failed');
+
+        analysisData = data;
+        renderFullResults(data);
+    } catch(e) {
+        showError(e.message);
+    } finally {
+        setBtnLoading('btn-analyze', false);
+        hideLoading();
+    }
+}
+
+// ─── Render Functions ───
+
+function renderPreScanOnly(pre) {
+    document.getElementById('results-area').classList.remove('hidden');
+    renderOverview(pre, null, null, null, null);
+    renderCompliance(pre.compliance);
+    renderBRIC(pre.bric);
+    document.querySelector('[data-tab="overview"]').click();
+    document.getElementById('results-area').scrollIntoView({behavior:'smooth'});
+}
+
+function renderFullResults(data) {
+    document.getElementById('results-area').classList.remove('hidden');
+    const pre = data.pre_scan;
+    const cp = data.county_profile || {};
+    const deep = data.deep_analysis || {};
+
+    // Status banner
+    const banner = document.getElementById('status-banner');
+    banner.className = 'status-banner ' + data.readiness;
+    banner.innerHTML = data.readiness_label + `<span class="score-big">${data.overall_score}/100</span>`;
+
+    // Deep analysis error?
+    if (deep.error) {
+        document.getElementById('api-warning').classList.remove('hidden');
+        document.getElementById('api-warning').querySelector('p').textContent = deep.error;
+    }
+
+    renderOverview(pre, cp, deep, data.overall_score, data.readiness);
+    renderCompliance(pre.compliance);
+    renderBRIC(pre.bric);
+    renderOperational(deep.operational_rigor);
+    renderStrategic(deep.strategic_rigor);
+    renderWisdomInsights(deep.wisdom, deep.insights);
+
+    document.querySelector('[data-tab="overview"]').click();
+    document.getElementById('results-area').scrollIntoView({behavior:'smooth'});
+}
+
+function renderOverview(pre, countyProfile, deep, overallScore, readiness) {
+    const el = document.getElementById('overview-content');
+    const meta = pre.metadata;
+    const comp = pre.compliance;
+    const bric = pre.bric;
+
+    let countyHTML = '';
+    if (countyProfile && countyProfile.risk_index && !countyProfile.risk_index.error) {
+        const nri = countyProfile.risk_index;
+        const demo = countyProfile.demographics || {};
+        const dis = countyProfile.disaster_history || {};
+        countyHTML = `
+            <div class="card" style="margin-top:20px">
+                <div class="card-header navy">🗺️ County Risk Profile — ${countyProfile.county}, ${countyProfile.state}</div>
+                <div class="card-body">
+                    <div class="profile-grid">
+                        <div class="profile-stat"><div class="val">${demo.total_population?.toLocaleString() || 'N/A'}</div><div class="lbl">Population</div></div>
+                        <div class="profile-stat"><div class="val">${nri.composite_risk_score || 'N/A'}</div><div class="lbl">NRI Risk Score</div></div>
+                        <div class="profile-stat"><div class="val">${nri.risk_national_ranking ? '#' + nri.risk_national_ranking : 'N/A'}</div><div class="lbl">Risk Nat'l Rank</div></div>
+                        <div class="profile-stat"><div class="val">${nri.expected_annual_loss_score || 'N/A'}</div><div class="lbl">Expected Annual Loss</div></div>
+                        <div class="profile-stat"><div class="val">${nri.social_vulnerability_score || 'N/A'}</div><div class="lbl">Social Vulnerability</div></div>
+                        <div class="profile-stat"><div class="val">${demo.poverty_rate_pct || 'N/A'}%</div><div class="lbl">Poverty Rate</div></div>
+                        <div class="profile-stat"><div class="val">$${demo.median_household_income?.toLocaleString() || 'N/A'}</div><div class="lbl">Median Income</div></div>
+                        <div class="profile-stat"><div class="val">${dis.total_recent || 'N/A'}</div><div class="lbl">Recent Disasters (State)</div></div>
+                    </div>
+                    ${dis.by_type ? `<div style="margin-top:16px;font-size:0.85rem;color:var(--slate-500)">Disaster types: ${Object.entries(dis.by_type).map(([k,v])=>`${k} (${v})`).join(' · ')}</div>` : ''}
+                </div>
+            </div>`;
+    } else if (countyProfile && (!countyProfile.fips || countyProfile.risk_index?.error)) {
+        countyHTML = `<div class="warning-box"><h3>County Data Not Found</h3><p>Could not retrieve official county data. Verify the county name matches Census records. Deep analysis will proceed using plan content only.</p></div>`;
+    }
+
+    el.innerHTML = `
+        <div class="score-row">
+            ${overallScore !== null ? `<div class="score-circle"><div class="number ${scoreClass(overallScore)}">${overallScore}</div><div class="lbl">Overall Score</div></div>` : ''}
+            <div class="score-circle"><div class="number ${scoreClass(comp.score)}">${comp.score}</div><div class="lbl">FEMA Compliance</div></div>
+            <div class="score-circle"><div class="number ${scoreClass(bric.score)}">${bric.score}</div><div class="lbl">BRIC Readiness</div></div>
+            ${deep?.operational_rigor?.score ? `<div class="score-circle"><div class="number ${scoreClass(deep.operational_rigor.score)}">${deep.operational_rigor.score}</div><div class="lbl">Operational Rigor</div></div>` : ''}
+            ${deep?.strategic_rigor?.score ? `<div class="score-circle"><div class="number ${scoreClass(deep.strategic_rigor.score)}">${deep.strategic_rigor.score}</div><div class="lbl">Strategic Rigor</div></div>` : ''}
+            ${deep?.wisdom?.score ? `<div class="score-circle"><div class="number ${scoreClass(deep.wisdom.score)}">${deep.wisdom.score}</div><div class="lbl">Wisdom</div></div>` : ''}
+            ${deep?.insights?.score ? `<div class="score-circle"><div class="number ${scoreClass(deep.insights.score)}">${deep.insights.score}</div><div class="lbl">Insights</div></div>` : ''}
+        </div>
+
+        <div class="card">
+            <div class="card-header blue">📄 Plan Metadata</div>
+            <div class="card-body">
+                <div class="profile-grid">
+                    <div class="profile-stat"><div class="val">${meta.word_count.toLocaleString()}</div><div class="lbl">Words</div></div>
+                    <div class="profile-stat"><div class="val">${meta.heading_count}</div><div class="lbl">Sections</div></div>
+                    <div class="profile-stat"><div class="val">${meta.plan_years}</div><div class="lbl">Plan Period</div></div>
+                    <div class="profile-stat"><div class="val">${meta.dollar_amounts.length}</div><div class="lbl">Dollar Amounts</div></div>
+                </div>
+                ${meta.detected_jurisdiction !== 'Not detected' ? `<div style="margin-top:12px;font-size:0.88rem;color:var(--slate-500)">Detected jurisdiction: <strong>${meta.detected_jurisdiction}</strong></div>` : ''}
+                ${meta.headings.length ? `<div style="margin-top:12px;font-size:0.82rem;color:var(--slate-500)">Sections: ${meta.headings.join(' → ')}</div>` : ''}
+            </div>
+        </div>
+
+        ${countyHTML}
+    `;
+}
+
+function renderCompliance(comp) {
+    const el = document.getElementById('compliance-content');
+    const statusMap = {pass:'✅', warn:'⚠️', fail:'❌'};
+    el.innerHTML = `
+        <div class="card">
+            <div class="card-header green">✅ FEMA 44 CFR §201.6 Compliance Check — ${comp.score}/100</div>
+            <div class="card-body">
+                <div class="checklist-grid">
+                    ${comp.items.map(item => `
+                        <div class="check-item ${item.status === 'present' ? 'pass' : item.status === 'weak' ? 'warn' : 'fail'}">
+                            <span class="check-icon">${statusMap[item.status === 'present' ? 'pass' : item.status === 'weak' ? 'warn' : 'fail']}</span>
+                            <div class="check-text">
+                                <div class="check-title">${item.requirement}</div>
+                                <div class="check-sub">${item.category} · ${item.keywords_found.length}/${item.keywords_total} keywords found</div>
+                                ${item.keywords_found.length ? `<div class="check-sub" style="color:var(--green);margin-top:2px">Found: ${item.keywords_found.join(', ')}</div>` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderBRIC(bric) {
+    const el = document.getElementById('bric-content');
+    const statusMap = {pass:'✅', warn:'⚠️', fail:'❌'};
+    const deep = analysisData?.deep_analysis;
+    const insights = deep?.insights;
+
+    let fundingHTML = '';
+    if (insights?.funding_opportunities?.length) {
+        fundingHTML = `
+            <div class="card">
+                <div class="card-header blue">💎 Identified Funding Opportunities</div>
+                <div class="card-body">
+                    ${insights.funding_opportunities.map(f => `
+                        <div class="funding-card">
+                            <div class="fc-program">${f.program}</div>
+                            <div class="fc-category"><span class="tag tag-blue">${f.category}</span> ${f.estimated_competitiveness ? `· Competitiveness: <strong>${f.estimated_competitiveness}</strong>` : ''}</div>
+                            <div class="fc-detail"><strong>What to pursue:</strong> ${f.what_county_can_pursue}</div>
+                            ${f.what_plan_needs ? `<div class="fc-detail"><strong>Plan must include:</strong> ${f.what_plan_needs}</div>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>`;
+    }
+
+    el.innerHTML = `
+        <div class="card">
+            <div class="card-header amber">💰 BRIC Funding Readiness — ${bric.score}/100</div>
+            <div class="card-body">
+                <div class="checklist-grid">
+                    ${bric.items.map(item => `
+                        <div class="check-item ${item.status === 'present' ? 'pass' : item.status === 'weak' ? 'warn' : 'fail'}">
+                            <span class="check-icon">${statusMap[item.status === 'present' ? 'pass' : item.status === 'weak' ? 'warn' : 'fail']}</span>
+                            <div class="check-text">
+                                <div class="check-title">${item.requirement}</div>
+                                <div class="check-sub">${item.category}${item.keywords_found?.length ? ` · Found: ${item.keywords_found.join(', ')}` : ''}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+        ${fundingHTML}`;
+}
+
+function renderOperational(op) {
+    const el = document.getElementById('operational-content');
+    if (!op) { el.innerHTML = '<div class="loading-overlay"><p>Operational Rigor analysis requires OpenAI API key configuration.</p></div>'; return; }
+
+    el.innerHTML = `
+        <div class="depth-section">
+            <div class="depth-title">⚙️ Deep Operational Rigor — Score: ${op.score}/100</div>
+            <div class="depth-verdict">${op.verdict || ''}</div>
+            ${op.findings?.length ? op.findings.map(f => `
+                <div class="finding-card">
+                    <div class="fc-area">${f.area}</div>
+                    <div class="fc-obs">📝 ${f.observation}</div>
+                    ${f.gap_analysis ? `<div class="fc-gap">⚡ Gap: ${f.gap_analysis}</div>` : ''}
+                    ${f.recommendation ? `<div class="fc-rec">✅ ${f.recommendation}</div>` : ''}
+                </div>
+            `).join('') : ''}
+        </div>
+        ${op.mitigation_action_quality ? `<div class="card"><div class="card-header slate">Mitigation Action Quality</div><div class="card-body"><p style="font-size:0.92rem">${op.mitigation_action_quality}</p></div></div>` : ''}
+        ${op.implementation_readiness ? `<div class="card"><div class="card-header slate">Implementation Readiness</div><div class="card-body"><p style="font-size:0.92rem">${op.implementation_readiness}</p></div></div>` : ''}
+        ${op.timeline_feasibility ? `<div class="card"><div class="card-header slate">Timeline Feasibility</div><div class="card-body"><p style="font-size:0.92rem">${op.timeline_feasibility}</p></div></div>` : ''}
+    `;
+}
+
+function renderStrategic(strat) {
+    const el = document.getElementById('strategic-content');
+    if (!strat) { el.innerHTML = '<div class="loading-overlay"><p>Strategic Rigor analysis requires OpenAI API key configuration.</p></div>'; return; }
+
+    el.innerHTML = `
+        <div class="depth-section">
+            <div class="depth-title">🎯 Deep Strategic Rigor — Score: ${strat.score}/100</div>
+            <div class="depth-verdict">${strat.verdict || ''}</div>
+            ${strat.findings?.length ? strat.findings.map(f => `
+                <div class="finding-card">
+                    <div class="fc-area">${f.area}</div>
+                    <div class="fc-obs">📝 ${f.observation}</div>
+                    ${f.gap_analysis ? `<div class="fc-gap">⚡ Strategic Gap: ${f.gap_analysis}</div>` : ''}
+                    ${f.recommendation ? `<div class="fc-rec">✅ ${f.recommendation}</div>` : ''}
+                </div>
+            `).join('') : ''}
+        </div>
+        ${strat.risk_prioritization ? `<div class="card"><div class="card-header navy">Risk Prioritization Assessment</div><div class="card-body"><p style="font-size:0.92rem">${strat.risk_prioritization}</p></div></div>` : ''}
+        ${strat.funding_strategy ? `<div class="card"><div class="card-header amber">Funding Strategy Assessment</div><div class="card-body"><p style="font-size:0.92rem">${strat.funding_strategy}</p></div></div>` : ''}
+        ${strat.long_term_vision ? `<div class="card"><div class="card-header blue">Long-Term Vision (5-10 Year)</div><div class="card-body"><p style="font-size:0.92rem">${strat.long_term_vision}</p></div></div>` : ''}
+        ${strat.integration_assessment ? `<div class="card"><div class="card-header slate">Cross-Plan Integration</div><div class="card-body"><p style="font-size:0.92rem">${strat.integration_assessment}</p></div></div>` : ''}
+    `;
+}
+
+function renderWisdomInsights(wisdom, insights) {
+    const el = document.getElementById('wisdom-content');
+
+    if (!wisdom && !insights) {
+        el.innerHTML = '<div class="loading-overlay"><p>Wisdom & Insights analysis requires OpenAI API key configuration.</p></div>';
+        return;
+    }
+
+    let html = '';
+
+    // Wisdom
+    if (wisdom) {
+        html += `<div class="depth-section">
+            <div class="depth-title">🧠 Deep Wisdom — Score: ${wisdom.score}/100</div>
+            <div class="depth-verdict">${wisdom.verdict || ''}</div>`;
+
+        if (wisdom.hidden_patterns?.length) {
+            html += `<div class="card"><div class="card-header navy">🔍 Hidden Patterns</div><div class="card-body"><ul class="bullet-list">${wisdom.hidden_patterns.map(p => `<li>${p}</li>`).join('')}</ul></div></div>`;
+        }
+        if (wisdom.systemic_risks?.length) {
+            html += `<div class="card"><div class="card-header red">⚠️ Systemic Risks</div><div class="card-body">${wisdom.systemic_risks.map(r => `
+                <div class="finding-card" style="border-left-color:var(--red)">
+                    <div class="fc-area">🚨 ${r.risk}</div>
+                    <div class="fc-obs">${r.explanation}</div>
+                    <div class="fc-rec">👁️ Watch for: ${r.early_warning_signs}</div>
+                </div>`).join('')}</div></div>`;
+        }
+        if (wisdom.assumptions_to_challenge?.length) {
+            html += `<div class="card"><div class="card-header amber">❓ Assumptions to Challenge</div><div class="card-body">${wisdom.assumptions_to_challenge.map(a => `
+                <div class="finding-card">
+                    <div class="fc-area">Assumption: "${a.assumption}"</div>
+                    <div class="fc-gap">Why question it: ${a.why_question_it}</div>
+                    <div class="fc-rec">Alternative: ${a.alternative}</div>
+                </div>`).join('')}</div></div>`;
+        }
+        if (wisdom.second_order_effects?.length) {
+            html += `<div class="card"><div class="card-header slate">🔁 Second-Order Effects</div><div class="card-body">${wisdom.second_order_effects.map(s => `
+                <div class="finding-card">
+                    <div class="fc-area">Action: ${s.action}</div>
+                    <div class="fc-obs">Intended: ${s.intended_effect}</div>
+                    <div class="fc-gap">Unintended: ${s.unintended_consequence}</div>
+                    <div class="fc-rec">Prevent by: ${s.mitigation}</div>
+                </div>`).join('')}</div></div>`;
+        }
+        if (wisdom.what_an_expert_would_notice?.length) {
+            html += `<div class="card"><div class="card-header blue">🎩 What an Expert EM Director Would Notice</div><div class="card-body"><ul class="bullet-list">${wisdom.what_an_expert_would_notice.map(w => `<li>${w}</li>`).join('')}</ul></div></div>`;
+        }
+        if (wisdom.cross_jurisdictional_insights) {
+            html += `<div class="card"><div class="card-header slate">🌐 Cross-Jurisdictional Insights</div><div class="card-body"><p style="font-size:0.92rem">${wisdom.cross_jurisdictional_insights}</p></div></div>`;
+        }
+        html += '</div>';
+    }
+
+    // Insights
+    if (insights) {
+        html += `<div class="depth-section" style="margin-top:32px">
+            <div class="depth-title">💡 Deep Insights — Score: ${insights.score}/100</div>
+            <div class="depth-verdict">${insights.verdict || ''}</div>`;
+
+        if (insights.top_insights?.length) {
+            html += insights.top_insights.map((i, idx) => `
+                <div class="insight-card">
+                    <div style="font-size:0.75rem;opacity:0.6;margin-bottom:8px">INSIGHT #${idx+1}</div>
+                    <div class="ic-insight">${i.insight}</div>
+                    <div class="ic-why">Why it matters: ${i.why_it_matters}</div>
+                    <div class="ic-action">🎯 Action for Director: ${i.action_for_director}</div>
+                    ${i.funding_link ? `<div class="ic-funding">💰 Funding: ${i.funding_link}</div>` : ''}
+                </div>`).join('');
+        }
+
+        if (insights.political_levers?.length) {
+            html += `<div class="card"><div class="card-header navy">🏛️ Political & Administrative Levers</div><div class="card-body">${insights.political_levers.map(p => `
+                <div class="finding-card">
+                    <div class="fc-area">${p.lever}</div>
+                    <div class="fc-obs">Engage: ${p.who_to_engage}</div>
+                    <div class="fc-rec">Talking point: "${p.talking_point}"</div>
+                </div>`).join('')}</div></div>`;
+        }
+
+        if (insights.quick_wins?.length) {
+            html += `<div class="card"><div class="card-header green">⚡ Quick Wins (< 30 Days)</div><div class="card-body"><ul class="bullet-list">${insights.quick_wins.map(w => `<li>${w}</li>`).join('')}</ul></div></div>`;
+        }
+
+        if (insights.six_month_roadmap?.length) {
+            html += `<div class="card"><div class="card-header blue">🗓️ 6-Month Improvement Roadmap</div><div class="card-body"><div class="roadmap">
+                ${insights.six_month_roadmap.map((r, i) => {
+                    const labels = ['Month 1', 'Months 2-3', 'Months 4-6', 'Ongoing'];
+                    return `<div class="roadmap-item"><div class="ri-label">${labels[i] || 'Phase ' + (i+1)}</div><div class="ri-text">${r}</div></div>`;
+                }).join('')}
+            </div></div></div>`;
+        }
+
+        html += '</div>';
+    }
+
+    el.innerHTML = html;
+}
+
+// ─── Export ───
+
+function exportReport() {
+    if (!analysisData) return alert('No analysis data to export.');
+    const d = analysisData;
+    const pre = d.pre_scan;
+    const deep = d.deep_analysis || {};
+    const comp = pre.compliance;
+    const bric = pre.bric;
+    const meta = pre.metadata;
+
+    let txt = '═══════════════════════════════════════════════════════════\n';
+    txt += '  FEMA HMP DEEP ANALYSIS REPORT\n';
+    txt += '═══════════════════════════════════════════════════════════\n\n';
+    txt += `Overall Score: ${d.overall_score}/100\n`;
+    txt += `Status: ${d.readiness_label}\n\n`;
+
+    txt += '── PLAN METADATA ──\n';
+    txt += `Words: ${meta.word_count} | Sections: ${meta.heading_count} | Period: ${meta.plan_years}\n\n`;
+
+    txt += '── FEMA COMPLIANCE ──\n';
+    comp.items.forEach(i => {
+        const s = i.status === 'present' ? 'PASS' : i.status === 'weak' ? 'WEAK' : 'FAIL';
+        txt += `[${s}] ${i.requirement}\n`;
+    });
+    txt += `Score: ${comp.score}/100\n\n`;
+
+    txt += '── BRIC READINESS ──\n';
+    bric.items.forEach(i => {
+        const s = i.status === 'present' ? 'PASS' : i.status === 'weak' ? 'WEAK' : 'FAIL';
+        txt += `[${s}] ${i.requirement}\n`;
+    });
+    txt += `Score: ${bric.score}/100\n\n`;
+
+    const op = deep.operational_rigor;
+    if (op) {
+        txt += '── DEEP OPERATIONAL RIGOR ──\n';
+        txt += `Score: ${op.score}/100\n${op.verdict}\n\n`;
+        op.findings?.forEach(f => { txt += `• ${f.area}: ${f.observation}\n  Gap: ${f.gap_analysis}\n  Fix: ${f.recommendation}\n\n`; });
+        if (op.mitigation_action_quality) txt += `Action Quality: ${op.mitigation_action_quality}\n\n`;
+        if (op.implementation_readiness) txt += `Implementation: ${op.implementation_readiness}\n\n`;
+    }
+
+    const strat = deep.strategic_rigor;
+    if (strat) {
+        txt += '── DEEP STRATEGIC RIGOR ──\n';
+        txt += `Score: ${strat.score}/100\n${strat.verdict}\n\n`;
+        strat.findings?.forEach(f => { txt += `• ${f.area}: ${f.observation}\n  Gap: ${f.gap_analysis}\n  Fix: ${f.recommendation}\n\n`; });
+        if (strat.risk_prioritization) txt += `Risk Prioritization: ${strat.risk_prioritization}\n\n`;
+        if (strat.funding_strategy) txt += `Funding Strategy: ${strat.funding_strategy}\n\n`;
+    }
+
+    const wis = deep.wisdom;
+    if (wis) {
+        txt += '── DEEP WISDOM ──\n';
+        txt += `Score: ${wis.score}/100\n${wis.verdict}\n\n`;
+        wis.hidden_patterns?.forEach(p => { txt += `Pattern: ${p}\n`; });
+        wis.systemic_risks?.forEach(r => { txt += `\nSystemic Risk: ${r.risk}\n  ${r.explanation}\n  Watch: ${r.early_warning_signs}\n`; });
+        wis.what_an_expert_would_notice?.forEach(w => { txt += `\nExpert Notice: ${w}\n`; });
+        txt += '\n';
+    }
+
+    const ins = deep.insights;
+    if (ins) {
+        txt += '── DEEP INSIGHTS ──\n';
+        txt += `Score: ${ins.score}/100\n${ins.verdict}\n\n`;
+        ins.top_insights?.forEach((i,idx) => { txt += `\nInsight #${idx+1}: ${i.insight}\n  Why: ${i.why_it_matters}\n  Action: ${i.action_for_director}\n  ${i.funding_link ? 'Funding: ' + i.funding_link : ''}\n`; });
+        ins.funding_opportunities?.forEach(f => { txt += `\nFunding: ${f.program} (${f.category})\n  Pursue: ${f.what_county_can_pursue}\n  Plan Needs: ${f.what_plan_needs}\n`; });
+        ins.quick_wins?.forEach(w => { txt += `\nQuick Win: ${w}\n`; });
+        ins.six_month_roadmap?.forEach((r,i) => { txt += `\nRoadmap Phase ${i+1}: ${r}\n`; });
+    }
+
+    txt += '\n═══════════════════════════════════════════════════════════\n';
+    txt += 'Generated by FEMA HMP Deep Analyzer\n';
+    txt += '═══════════════════════════════════════════════════════════\n';
+
+    const blob = new Blob([txt], {type:'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'HMP-Deep-Analysis-Report.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ─── Utilities ───
+
+function scoreClass(s) { return s >= 75 ? 'high' : s >= 50 ? 'mid' : 'low'; }
+
+function showError(msg) {
+    document.getElementById('error-msg').textContent = msg;
+    document.getElementById('error-box').classList.remove('hidden');
+}
+function hideError() { document.getElementById('error-box').classList.add('hidden'); }
+
+function showLoading(type) {
+    const msg = type === 'full'
+        ? 'Running deep analysis... This includes compliance scanning, county data fetch, and AI-powered deep reasoning. May take 30-90 seconds.'
+        : 'Scanning document against FEMA requirements...';
+    const existing = document.getElementById('loading-overlay');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.id = 'loading-overlay';
+    div.className = 'loading-overlay';
+    div.innerHTML = `<div class="spinner spinner-dark" style="margin:0 auto"></div><p>${msg}</p><p class="sub">Please do not navigate away from this page.</p>`;
+    document.getElementById('results-area').classList.remove('hidden');
+    document.getElementById('results-area').prepend(div);
+}
+function hideLoading() {
+    const el = document.getElementById('loading-overlay');
+    if (el) el.remove();
+}
+
+function setBtnLoading(btnId, loading) {
+    const btn = document.getElementById(btnId);
+    if (loading) {
+        btn.disabled = true;
+        btn.dataset.originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner"></span> Processing...';
+    } else {
+        btn.disabled = false;
+        btn.innerHTML = btn.dataset.originalText || btn.innerHTML;
+    }
+}
+</script>
+</body>
+</html>
